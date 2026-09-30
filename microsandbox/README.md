@@ -8,7 +8,7 @@ Helper scripts for running [Claude Code](https://claude.com/claude-code) inside 
 | --- | --- |
 | `setup-claude-sandbox.sh` | One-time creation of the base `claude` VM with Claude Code installed |
 | `fork-claude-sandbox.sh` | Clone the base VM (via disk snapshot) into a new named sandbox, optionally installing extra tools |
-| `claude-sandbox.sh` | Day-to-day launcher: starts an interactive Claude session, creating a per-directory sandbox if needed |
+| `claude-sandbox.sh` | Day-to-day launcher: opens a bash shell in the sandbox (run `claude` from there), creating a per-directory sandbox if needed |
 | `claude-mounts.yaml` | Mount definitions used by the setup script for the base VM |
 
 ## Typical workflow
@@ -16,7 +16,7 @@ Helper scripts for running [Claude Code](https://claude.com/claude-code) inside 
 ```
 ./setup-claude-sandbox.sh      # once: build the base "claude" VM
 cd ~/some/project
-/path/to/claude-sandbox.sh     # every time: run Claude against this directory
+/path/to/claude-sandbox.sh     # every time: open a shell in this directory's sandbox, then run `claude`
 ```
 
 ## Scripts
@@ -44,7 +44,9 @@ Notes:
 
 ### `fork-claude-sandbox.sh`
 
-Snapshots an existing sandbox (default `claude`) and restores the snapshot into a new named sandbox. The source is left unchanged. Host bind mounts aren't part of a snapshot, so the script re-supplies them: the work dir at `/workspace`, `~/.agents` read-only at `/root/.agents`, the `claude-home` volume at `/root/.claude`, and `~/.claude.json` if present.
+Snapshots an existing sandbox (default `claude`) and restores the snapshot into a new named sandbox. The source is left unchanged. Host bind mounts aren't part of a snapshot, so the script re-supplies them: the work dir at `/workspace/<name>`, `~/.agents` read-only at `/root/.agents`, the shared `claude-home` volume at `/root/.claude`, a per-sandbox `claude-projects-<name>` volume at `/root/.claude/projects`, and `~/.claude.json` if present.
+
+Session isolation: Claude keys sessions and `~/.claude.json` project state by working directory. Each sandbox therefore gets a unique work path (`/workspace/<name>`) and its own `projects/` volume, so chat history and subagent transcripts aren't shared between sandboxes. Credentials, `CLAUDE.md` and skills stay shared via `claude-home`. `history.jsonl` and `todos/` are still shared.
 
 ```
 ./fork-claude-sandbox.sh -n research --apt "python3 jq"
@@ -58,24 +60,26 @@ Snapshots an existing sandbox (default `claude`) and restores the snapshot into 
 | `--from NAME` | Source sandbox to fork (default `claude`) |
 | `--apt "PKGS"` | Space-separated apt packages to install in the fork |
 | `--script FILE` | Shell script to run inside the fork, after `--apt` |
-| `--dir DIR` | Host directory mounted at `/workspace` (default: the script's own directory) |
+| `--dir DIR` | Host directory mounted at `/workspace/<name>` (default: the script's own directory) |
 | `-h`, `--help` | Show help |
 
-Caveat (from the script's own note): whether the `claude-home` volume, `CLAUDE_CONFIG_DIR`, and secrets carry over on restore is undocumented, so verify after the first run.
+Caveat (from the script's own note): whether the `claude-home` volume, `CLAUDE_CONFIG_DIR`, and secrets carry over on restore is undocumented, so verify after the first run. Also verify that the nested `claude-projects-<name>` volume mounts over `/root/.claude/projects`.
 
 ### `claude-sandbox.sh`
 
-Launches an interactive `claude` session in a sandbox via `msb exec -t`, with `HERDR_AGENT=claude` set so herdr can detect the agent.
+Opens an interactive `bash` shell in a sandbox via `msb exec -t`, in the sandbox's work directory. Run `claude` from that shell. `HERDR_AGENT=claude` is still set on the `msb` process so herdr can detect the agent.
 
 ```
-./claude-sandbox.sh                # sandbox for $PWD, mounted at /workspace
+./claude-sandbox.sh                # sandbox for $PWD, mounted at /workspace/<sandbox-name>
 ./claude-sandbox.sh -n other       # use the existing "other" sandbox as-is
-./claude-sandbox.sh -- --resume    # pass extra args through to claude
+./claude-sandbox.sh -- -c 'claude --resume'   # pass extra args through to the command
+./claude-sandbox.sh --cmd claude -- --resume  # run claude instead of bash
 ```
 
 - With no `-n` (and no `$CLAUDE_SANDBOX_NAME`), the sandbox is named `claude-<dirname>-<cksum of $PWD>`. If it doesn't exist, the script calls `fork-claude-sandbox.sh --dir "$PWD"` to create it. `msb exec` can't mount anything, which is why the fork step is needed.
 - Explicitly named sandboxes are never auto-created.
-- Arguments after `--` go to `claude`.
+- The shell starts in `/workspace/<sandbox-name>`, falling back to `/workspace` for sandboxes forked before per-sandbox paths existed (those keep sharing the old `/workspace` state).
+- `--cmd COMMAND` replaces `bash` with another command (a single executable, no embedded arguments). Arguments after `--` go to whichever command runs.
 
 ## Requirements
 

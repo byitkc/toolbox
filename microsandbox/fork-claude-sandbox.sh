@@ -13,7 +13,7 @@
 #   --from NAME         Source sandbox to fork (default: claude)
 #   --apt "PKGS"        Space-separated apt packages to install in the fork
 #   --script FILE       Shell script to run inside the fork (after --apt)
-#   --dir DIR           Host directory mounted at /workspace (default: this script's dir)
+#   --dir DIR           Host directory mounted at /workspace/NAME (default: this script's dir)
 #   -h, --help          Show this help
 #
 # Afterwards, start a session with:
@@ -22,6 +22,8 @@
 # NOTE: host bind mounts are not part of a snapshot, so they are re-supplied
 # below with -v. Whether the claude-home named volume, CLAUDE_CONFIG_DIR, and
 # secrets carry over on restore is not documented; verify after the first run.
+# Likewise verify that the nested claude-projects-NAME volume mounts over
+# /root/.claude/projects.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SOURCE="claude"
@@ -76,6 +78,12 @@ fi
 SNAP="fork-$NAME"
 AGENTS_DIR="$(readlink -f "$HOME/.agents")"
 
+# Claude keys sessions and ~/.claude.json project state by working directory, so
+# every sandbox using /workspace would share history. Mount each sandbox's dir at
+# a unique path, and give it its own volume for session transcripts.
+WORK_MOUNT="/workspace/$NAME"
+PROJECTS_VOLUME="claude-projects-$NAME"
+
 echo "==> Snapshotting '$SOURCE' as $SOURCE:$SNAP"
 msb snap create "$SNAP" --sandbox "$SOURCE" || exit 1
 
@@ -83,9 +91,12 @@ msb snap create "$SNAP" --sandbox "$SOURCE" || exit 1
 # unverified (see NOTE above).
 RESTORE_ARGS=(
   --name "$NAME"
-  -v "$WORK_DIR:/workspace"
+  -v "$WORK_DIR:$WORK_MOUNT"
   -v "$AGENTS_DIR:/root/.agents:ro"
   -v "claude-home:/root/.claude"
+  # Nested over claude-home: credentials, CLAUDE.md and skills stay shared, but
+  # session transcripts (projects/) are per sandbox.
+  -v "$PROJECTS_VOLUME:/root/.claude/projects"
 )
 
 if [ -f "$HOME/.claude.json" ]; then
@@ -106,4 +117,5 @@ if [ -n "$EXTRA_SCRIPT" ]; then
   msb exec "$NAME" -- sh -lc "$(cat "$EXTRA_SCRIPT")" || exit 1
 fi
 
+echo "Workspace mounted at $WORK_MOUNT; sessions stored in volume '$PROJECTS_VOLUME'"
 echo "Fork complete. Start a session with: ./claude-sandbox.sh -n $NAME"

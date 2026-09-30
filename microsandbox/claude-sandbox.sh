@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
-# Start an interactive Claude Code session inside a microsandbox VM, with herdr
-# agent detection enabled.
+# Open an interactive bash shell inside a microsandbox VM (run `claude` from
+# there), with herdr agent detection enabled.
 #
 # Usage:
-#   ./claude-sandbox.sh                          # per-directory sandbox with $PWD at /workspace
-#   ./claude-sandbox.sh -n other                 # session in the "other" sandbox (as-is)
-#   ./claude-sandbox.sh -- --resume              # extra args are passed to claude
+#   ./claude-sandbox.sh                          # per-directory sandbox with $PWD at /workspace/<name>
+#   ./claude-sandbox.sh -n other                 # shell in the "other" sandbox (as-is)
+#   ./claude-sandbox.sh -- -c 'claude --resume'  # extra args are passed to the command
+#   ./claude-sandbox.sh --cmd claude -- --resume # run claude instead of bash
 #
 # Options:
 #   -n, --name NAME   Sandbox to exec into (default: claude-<dir>-<hash> for the cwd,
 #                     or $CLAUDE_SANDBOX_NAME). Explicit names are never auto-created.
+#   --cmd COMMAND     Command to run instead of bash (a single executable; put its
+#                     arguments after --)
 #   -h, --help        Show this help
 #
 # msb exec cannot mount anything, so on first use in a directory this forks the
@@ -17,6 +20,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NAME="${CLAUDE_SANDBOX_NAME:-}"
+CMD="bash"
 
 usage() {
   sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'
@@ -34,6 +38,18 @@ while [ $# -gt 0 ]; do
       ;;
     --name=*)
       NAME="${1#--name=}"
+      shift
+      ;;
+    --cmd)
+      if [ -z "$2" ]; then
+        echo "error: $1 requires a value" >&2
+        exit 2
+      fi
+      CMD="$2"
+      shift 2
+      ;;
+    --cmd=*)
+      CMD="${1#--cmd=}"
       shift
       ;;
     -h|--help)
@@ -62,4 +78,8 @@ if [ -z "$NAME" ]; then
   fi
 fi
 
-HERDR_AGENT=claude exec msb exec -t "$NAME" -- claude "$@"
+# Each fork mounts its directory at /workspace/<name> (unique per sandbox, so
+# Claude's per-directory state isn't shared). Fall back to /workspace for
+# sandboxes forked before that change.
+HERDR_AGENT=claude exec msb exec -t "$NAME" -- sh -c \
+  'cd "/workspace/$0" 2>/dev/null || cd /workspace; exec "$@"' "$NAME" "$CMD" "$@"
