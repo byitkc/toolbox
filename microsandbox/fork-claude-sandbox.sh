@@ -13,6 +13,7 @@
 #   --from NAME         Source sandbox to fork (default: claude)
 #   --apt "PKGS"        Space-separated apt packages to install in the fork
 #   --script FILE       Shell script to run inside the fork (after --apt)
+#   --dir DIR           Host directory mounted at /workspace (default: this script's dir)
 #   -h, --help          Show this help
 #
 # Afterwards, start a session with:
@@ -27,6 +28,7 @@ SOURCE="claude"
 NAME=""
 APT_PKGS=""
 EXTRA_SCRIPT=""
+WORK_DIR="$SCRIPT_DIR"
 
 usage() {
   sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'
@@ -49,6 +51,8 @@ while [ $# -gt 0 ]; do
     --apt=*)     APT_PKGS="${1#--apt=}"; shift ;;
     --script)    need_value "$1" "$2"; EXTRA_SCRIPT="$2"; shift 2 ;;
     --script=*)  EXTRA_SCRIPT="${1#--script=}"; shift ;;
+    --dir)       need_value "$1" "$2"; WORK_DIR="$(cd "$2" && pwd)" || exit 2; shift 2 ;;
+    --dir=*)     WORK_DIR="$(cd "${1#--dir=}" && pwd)" || exit 2; shift ;;
     -h|--help)   usage; exit 0 ;;
     *)
       echo "error: unknown option: $1" >&2
@@ -79,10 +83,14 @@ msb snap create "$SNAP" --sandbox "$SOURCE" || exit 1
 # unverified (see NOTE above).
 RESTORE_ARGS=(
   --name "$NAME"
-  -v "$SCRIPT_DIR:/workspace"
+  -v "$WORK_DIR:/workspace"
   -v "$AGENTS_DIR:/root/.agents:ro"
   -v "claude-home:/root/.claude"
 )
+
+if [ -f "$HOME/.claude.json" ]; then
+  RESTORE_ARGS+=(-v "$HOME/.claude.json:/root/.claude.json")
+fi
 
 echo "==> Restoring $SOURCE:$SNAP into '$NAME'"
 msb snap restore "$SOURCE:$SNAP" "${RESTORE_ARGS[@]}" || exit 1

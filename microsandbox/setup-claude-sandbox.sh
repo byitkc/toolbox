@@ -28,11 +28,6 @@ CREATE_ARGS=(
   # --secret 'ANTHROPIC_API_KEY@api.anthropic.com'
   # --secret 'GITHUB_TOKEN@github.com,api.github.com'
   -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
-  # Claude Code's login state (oauthAccount, etc.) normally lives in
-  # ~/.claude.json, which is OUTSIDE the persisted claude-home volume and
-  # gets wiped on every rebuild. Pointing CLAUDE_CONFIG_DIR at the mounted
-  # volume moves that file to /root/.claude/.claude.json so login survives.
-  -e CLAUDE_CONFIG_DIR=/root/.claude
 )
 
 if [ "$1" = "--rebuild" ]; then
@@ -41,6 +36,13 @@ fi
 
 if [ -f "$HOME/.gitconfig" ]; then
   CREATE_ARGS+=(--mount-file "$HOME/.gitconfig:/root/.gitconfig:ro")
+fi
+
+# Claude Code's login state (oauthAccount, etc.) lives in ~/.claude.json, which
+# is outside the claude-home volume. Share the host's copy (read-write, since
+# Claude Code updates it) so login survives rebuilds.
+if [ -f "$HOME/.claude.json" ]; then
+  CREATE_ARGS+=(--mount-file "$HOME/.claude.json:/root/.claude.json")
 fi
 
 msb create "${CREATE_ARGS[@]}" node:24-bookworm-slim
