@@ -49,7 +49,7 @@ msb create "${CREATE_ARGS[@]}" node:24-bookworm-slim
 
 msb exec claude -- sh -lc '
   apt-get update &&
-  apt-get install -y --no-install-recommends ca-certificates git ripgrep gh &&
+  apt-get install -y --no-install-recommends ca-certificates git openssh-client ripgrep gh &&
   npm install -g --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-code &&
   mkdir -p /root/.claude &&
   ln -sfn /root/.agents/skills /root/.claude/skills &&

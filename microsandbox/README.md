@@ -25,7 +25,7 @@ cd ~/some/project
 
 Creates the long-lived base sandbox named `claude` (`node:24-bookworm-slim`, 2 CPUs, 4G RAM, 8G root disk, workdir `/workspace`), then installs inside it:
 
-- apt packages: `ca-certificates`, `git`, `ripgrep`, `gh`
+- apt packages: `ca-certificates`, `git`, `openssh-client`, `ripgrep`, `gh`
 - `@anthropic-ai/claude-code` (global npm install)
 - a `/root/.claude/skills` symlink to `/root/.agents/skills`
 - `/root/.claude/CLAUDE.md` containing `@/root/.agents/AGENTS.md`, so your global agent instructions apply in the sandbox
@@ -45,6 +45,8 @@ Notes:
 ### `fork-claude-sandbox.sh`
 
 Snapshots an existing sandbox (default `claude`) and restores the snapshot into a new named sandbox. The source is left unchanged. Host bind mounts aren't part of a snapshot, so the script re-supplies them: the work dir at `/workspace/<name>`, `~/.agents` read-only at `/root/.agents`, the shared `claude-home` volume at `/root/.claude`, a per-sandbox `claude-projects-<name>` volume at `/root/.claude/projects`, and `~/.claude.json` if present.
+
+SSH keys: when the new sandbox is created, every passphrase-protected private key in the host's `~/.ssh` is copied into `/root/.ssh` in the VM (mode 600). Unencrypted keys, public keys and non-key files are skipped, so decrypt/load them inside the VM as needed (`ssh-add`, `ssh-keygen -p`). Keys are copied via `msb exec` and never land in this directory.
 
 Session isolation: Claude keys sessions and `~/.claude.json` project state by working directory. Each sandbox therefore gets a unique work path (`/workspace/<name>`) and its own `projects/` volume, so chat history and subagent transcripts aren't shared between sandboxes. Credentials, `CLAUDE.md` and skills stay shared via `claude-home`. `history.jsonl` and `todos/` are still shared.
 

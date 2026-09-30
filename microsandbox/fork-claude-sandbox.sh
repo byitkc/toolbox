@@ -106,6 +106,30 @@ fi
 echo "==> Restoring $SOURCE:$SNAP into '$NAME'"
 msb snap restore "$SOURCE:$SNAP" "${RESTORE_ARGS[@]}" || exit 1
 
+# Copy passphrase-protected private keys from the host's ~/.ssh into the VM.
+# Unencrypted keys are never copied: `ssh-keygen -y -P ''` succeeds only when a
+# key has no passphrase. Content is passed as base64 in the command string
+# because msb exec stdin forwarding is unverified.
+SSH_COPIED=0
+if [ -d "$HOME/.ssh" ] && command -v ssh-keygen >/dev/null 2>&1; then
+  for key in "$HOME"/.ssh/*; do
+    [ -f "$key" ] || continue
+    grep -q 'PRIVATE KEY' "$key" 2>/dev/null || continue
+    if ssh-keygen -y -P '' -f "$key" >/dev/null 2>&1; then
+      echo "==> Skipping unencrypted SSH key: $key"
+      continue
+    fi
+    b64="$(base64 < "$key" | tr -d '\n')"
+    msb exec "$NAME" -- sh -c '
+      mkdir -p /root/.ssh && chmod 700 /root/.ssh &&
+      printf %s "$1" | base64 -d > "/root/.ssh/$0" &&
+      chmod 600 "/root/.ssh/$0"
+    ' "$(basename "$key")" "$b64" || exit 1
+    echo "==> Copied encrypted SSH key: $(basename "$key")"
+    SSH_COPIED=$((SSH_COPIED + 1))
+  done
+fi
+
 if [ -n "$APT_PKGS" ]; then
   echo "==> Installing apt packages: $APT_PKGS"
   msb exec "$NAME" -- sh -lc \
