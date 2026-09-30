@@ -1,0 +1,27 @@
+# Drives mapped into the "claude" microsandbox VM.
+# Passed to `msb create` via --fs-conf by setup-claude-sandbox.sh.
+#
+# Each mount needs exactly one source (bind, named, tmpfs, or disk) and a
+# guest target. Optional flags: readonly, noexec, nosuid, nodev.
+#   - Relative bind paths resolve against THIS file's directory.
+#   - Dollar-brace env vars expand from the host env; they must be set,
+#     and shell-style defaults are not supported.
+#   - Named volumes persist across --rebuild.
+# Changes take effect on the next `./setup-claude-sandbox.sh --rebuild`.
+
+mounts:
+  # AGENTS_DIR is ~/.agents with symlinks resolved, exported by the setup
+  # script (msb refuses a symlinked mount root by default).
+  - bind: "${AGENTS_DIR}"
+    target: /root/.agents
+    readonly: true
+    nosuid: true
+    nodev: true
+
+  - bind: "."
+    target: /workspace
+    readonly: false
+
+  - named: claude-home
+    target: /root/.claude
+    create: ensure-exists
