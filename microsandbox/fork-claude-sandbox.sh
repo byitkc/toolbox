@@ -91,6 +91,8 @@ msb snap create "$SNAP" --sandbox "$SOURCE" || exit 1
 # unverified (see NOTE above).
 RESTORE_ARGS=(
   --name "$NAME"
+  -c "2"
+  -m "2G"
   -v "$WORK_DIR:$WORK_MOUNT"
   -v "$AGENTS_DIR:/root/.agents:ro"
   -v "claude-home:/root/.claude"
